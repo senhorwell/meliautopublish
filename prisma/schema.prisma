@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model MlAccount {
+  id           String       @id @default(cuid())
+  mlUserId     String       @unique
+  nickname     String?
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  siteId       String       @default("MLB")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  jobs         PublishJob[]
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model PublishJob {
+  id           String     @id @default(cuid())
+  sourceUrl    String
+  sourceItemId String?
+  title        String?
+  description  String?
+  price        Float?
+  currencyId   String?
+  categoryId   String?
+  status       String     @default("pending")
+  error        String?
+  mlItemId     String?
+  mlPermalink  String?
+  accountId    String?
+  account      MlAccount? @relation(fields: [accountId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
