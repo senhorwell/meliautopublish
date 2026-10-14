@@ -248,7 +248,7 @@ function pickCategoryId(data: unknown): string | null {
  * categoria compatível.
  */
 export async function predictCategoryId(title: string): Promise<string | null> {
-  const url = `${ML_API}/sites/MLB/category_predictor/predict?q=${encodeURIComponent(title)}`;
+  const url = `${ML_API}/sites/MLB/domain_discovery/search?limit=1&q=${encodeURIComponent(title)}`;
   try {
     const data = await mlFetch<unknown>(url);
     const id = pickCategoryId(data);

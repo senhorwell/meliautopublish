@@ -1,6 +1,6 @@
 import { optimizeListing, suggestCategoryId } from "@/lib/ai";
 import { prisma } from "@/lib/db";
-import { extractMlItemId, fetchItemData } from "@/lib/extract";
+import { extractMlItemId, fetchItemDataForUrl } from "@/lib/extract";
 import {
   categoryExists,
   createItem,
@@ -63,12 +63,16 @@ export async function processUrl(
 
     let item: ExtractedItem;
     try {
-      item = await scrapeItemData(url);
-    } catch (scrapeError) {
+      item = await fetchItemDataForUrl(
+        url,
+        itemId,
+        options.account.accessToken,
+      );
+    } catch (apiError) {
       try {
-        item = await fetchItemData(itemId, options.account.accessToken);
+        item = await scrapeItemData(url);
       } catch {
-        throw scrapeError;
+        throw apiError;
       }
     }
 

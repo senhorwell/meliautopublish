@@ -58,8 +58,12 @@ src/
    Livre com um `state` anti-CSRF guardado em cookie. O `callback` troca o `code`
    por `access_token` + `refresh_token` e persiste em `MlAccount`. O `access_token`
    é renovado automaticamente via `refresh_token` quando está perto de expirar.
-2. **Extração** — `extractMlItemId` captura o `MLB ID` via regex e busca
-   `GET /items/{id}` + `GET /items/{id}/description`.
+2. **Extração** — resolve os dados priorizando as APIs oficiais: links de
+   catálogo (`/p/MLB...`) usam `GET /products/{id}`; o próprio anúncio da conta
+   usa `GET /items/{id}`; anúncios de terceiros (bloqueados em `/items`) são
+   resolvidos pelo produto de catálogo via `GET /products/search` a partir do
+   título no link. O scrap da página HTML fica apenas como último recurso
+   (o Mercado Livre bloqueia acesso automático com verificação anti-bot).
 3. **Otimização** — `optimizeListing` envia título/preço/atributos/descrição ao
    Gemini com `responseSchema`, garantindo JSON válido:
    ```json
