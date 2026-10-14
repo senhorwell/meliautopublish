@@ -58,11 +58,26 @@ function stripHtml(input: string): string {
     .trim();
 }
 
+/**
+ * Lê um recurso do anúncio de origem priorizando o acesso público (sem token).
+ * Enviar o token da conta conectada para ler o anúncio de outro vendedor faz o
+ * Mercado Livre responder 403 ("Access to the requested resource is forbidden").
+ * O token só é usado como fallback (ex.: anúncios privados da própria conta).
+ */
+async function mlFetchPublic<T>(url: string, token?: string): Promise<T> {
+  try {
+    return await mlFetch<T>(url);
+  } catch (error) {
+    if (!token) throw error;
+    return mlFetch<T>(url, token);
+  }
+}
+
 export async function fetchItemData(
   itemId: string,
   token?: string,
 ): Promise<ExtractedItem> {
-  const item = await mlFetch<MlItemRaw>(`${ML_API}/items/${itemId}`, token);
+  const item = await mlFetchPublic<MlItemRaw>(`${ML_API}/items/${itemId}`, token);
 
   if (!item || !item.id) {
     throw new Error("Anúncio não encontrado ou inacessível.");
@@ -75,7 +90,7 @@ export async function fetchItemData(
 
   let description = "";
   try {
-    const desc = await mlFetch<{ plain_text?: string; text?: string }>(
+    const desc = await mlFetchPublic<{ plain_text?: string; text?: string }>(
       `${ML_API}/items/${itemId}/description`,
       token,
     );
