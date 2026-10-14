@@ -15,15 +15,18 @@ export type MlAccountLike = {
 export class MlApiError extends Error {
   status: number;
   details: unknown;
+  url?: string;
 
-  constructor(status: number, details: unknown) {
-    super(MlApiError.messageFrom(details, status));
+  constructor(status: number, details: unknown, url?: string) {
+    super(MlApiError.messageFrom(details, status, url));
     this.name = "MlApiError";
     this.status = status;
     this.details = details;
+    this.url = url;
   }
 
-  static messageFrom(details: unknown, status: number): string {
+  static messageFrom(details: unknown, status: number, url?: string): string {
+    const context = url ? ` [HTTP ${status} · ${url}]` : ` [HTTP ${status}]`;
     if (details && typeof details === "object") {
       const d = details as Record<string, unknown>;
       const cause = Array.isArray(d.cause)
@@ -31,11 +34,13 @@ export class MlApiError extends Error {
             .map((c) => c.message ?? c.code ?? JSON.stringify(c))
             .join(", ")
         : undefined;
-      const base = [d.message, d.error].find((v) => typeof v === "string");
-      if (base) return cause ? `${base} (${cause})` : String(base);
-      if (cause) return cause;
+      const base = [d.message, d.error, d.code].find(
+        (v) => typeof v === "string",
+      );
+      if (base) return cause ? `${base} (${cause})${context}` : `${base}${context}`;
+      if (cause) return `${cause}${context}`;
     }
-    return `Erro na API do Mercado Livre (HTTP ${status}).`;
+    return `Erro na API do Mercado Livre${context}.`;
   }
 }
 
@@ -93,7 +98,7 @@ async function requestToken(body: Record<string, string>): Promise<TokenResponse
   } catch {
     data = text;
   }
-  if (!res.ok) throw new MlApiError(res.status, data);
+  if (!res.ok) throw new MlApiError(res.status, data, `${ML_API}/oauth/token`);
   return data as TokenResponse;
 }
 
@@ -137,7 +142,7 @@ export async function mlFetch<T = unknown>(
   } catch {
     data = text;
   }
-  if (!res.ok) throw new MlApiError(res.status, data);
+  if (!res.ok) throw new MlApiError(res.status, data, url);
   return data as T;
 }
 
