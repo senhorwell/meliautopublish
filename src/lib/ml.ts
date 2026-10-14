@@ -205,6 +205,59 @@ export async function deleteAccounts() {
   return prisma.mlAccount.deleteMany();
 }
 
+/**
+ * Verifica (via recurso público) se um ID de categoria existe no Mercado Livre.
+ * Em caso de falha de rede/bloqueio retorna true para não descartar um ID
+ * potencialmente válido sugerido pela IA.
+ */
+export async function categoryExists(categoryId: string): Promise<boolean> {
+  try {
+    await mlFetch(`${ML_API}/categories/${categoryId}`);
+    return true;
+  } catch (error) {
+    if (error instanceof MlApiError) return false;
+    return true;
+  }
+}
+
+function pickCategoryId(data: unknown): string | null {
+  if (Array.isArray(data)) {
+    for (const entry of data) {
+      const id = pickCategoryId(entry);
+      if (id) return id;
+    }
+    return null;
+  }
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    const direct = [obj.id, obj.category_id, obj.categoryId].find(
+      (value) => typeof value === "string" && /^ML[A-Z]\d+$/i.test(value),
+    );
+    if (typeof direct === "string") return direct.toUpperCase();
+    for (const value of Object.values(obj)) {
+      const id = pickCategoryId(value);
+      if (id) return id;
+    }
+  }
+  return null;
+}
+
+/**
+ * Consulta o preditor público de categorias do Mercado Livre a partir do
+ * título do produto. Retorna null quando a API não responde ou não há
+ * categoria compatível.
+ */
+export async function predictCategoryId(title: string): Promise<string | null> {
+  const url = `${ML_API}/sites/MLB/category_predictor/predict?q=${encodeURIComponent(title)}`;
+  try {
+    const data = await mlFetch<unknown>(url);
+    const id = pickCategoryId(data);
+    return id && /^ML[A-Z]\d+$/i.test(id) ? id.toUpperCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export type CreateItemPayload = {
   title: string;
   categoryId: string;

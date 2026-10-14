@@ -1,13 +1,16 @@
-import { optimizeListing } from "@/lib/ai";
+import { optimizeListing, suggestCategoryId } from "@/lib/ai";
 import { prisma } from "@/lib/db";
 import { extractMlItemId, fetchItemData } from "@/lib/extract";
 import {
+  categoryExists,
   createItem,
   MlApiError,
+  predictCategoryId,
   setItemDescription,
   type MlAccountLike,
 } from "@/lib/ml";
-import type { PipelineEvent } from "@/lib/types";
+import { scrapeItemData } from "@/lib/scrape";
+import type { ExtractedItem, PipelineEvent } from "@/lib/types";
 
 export type Emit = (event: PipelineEvent) => void;
 
@@ -58,7 +61,29 @@ export async function processUrl(
       message: "Extraindo dados do anúncio original...",
     });
 
-    const item = await fetchItemData(itemId, options.account.accessToken);
+    let item: ExtractedItem;
+    try {
+      item = await scrapeItemData(url);
+    } catch (scrapeError) {
+      try {
+        item = await fetchItemData(itemId, options.account.accessToken);
+      } catch {
+        throw scrapeError;
+      }
+    }
+
+    if (!item.categoryId) {
+      const predicted = await predictCategoryId(item.title);
+      if (predicted) {
+        item.categoryId = predicted;
+      } else {
+        const suggested = await suggestCategoryId(item).catch(() => null);
+        if (suggested && (await categoryExists(suggested))) {
+          item.categoryId = suggested;
+        }
+      }
+    }
+
     await prisma.publishJob.update({
       where: { id: job.id },
       data: {

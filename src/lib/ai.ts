@@ -8,6 +8,10 @@ const OptimizedSchema = z.object({
   suggested_price_multiplier: z.number().optional(),
 });
 
+const CategorySchema = z.object({
+  category_id: z.string(),
+});
+
 let client: GoogleGenAI | null = null;
 
 function getClient(): GoogleGenAI {
@@ -127,4 +131,63 @@ export async function optimizeListing(
     description: result.description.trim(),
     suggested_price_multiplier: Math.min(1.5, Math.max(0.8, multiplier)),
   };
+}
+
+const CATEGORY_INSTRUCTION = `Você é um especialista em categorização de anúncios do Mercado Livre Brasil.
+Dado um produto, retorne o ID da categoria (domain) do Mercado Livre Brasil mais adequada.
+O ID tem o formato "MLB" seguido de números (ex.: MLB1648, MLB1051).
+Responda SEMPRE e SOMENTE com JSON válido no formato solicitado e nunca invente IDs inexistentes.`;
+
+/**
+ * Usa a IA para sugerir a categoria (ID) do Mercado Livre mais adequada ao
+ * produto. Retorna null quando a IA não consegue determinar um ID plausível.
+ */
+export async function suggestCategoryId(
+  item: ExtractedItem,
+): Promise<string | null> {
+  const ai = getClient();
+  const model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+
+  const attrs = item.attributes
+    .filter((a) => a.value_name || a.value_id)
+    .map((a) => `- ${a.name ?? a.id}: ${a.value_name ?? a.value_id}`)
+    .join("\n");
+
+  const prompt = `Produto: ${item.title}
+Categoria atual: ${item.categoryId || "(desconhecida)"}
+Atributos:
+${attrs || "- (não informados)"}
+
+Informe o ID da categoria do Mercado Livre Brasil para esse produto.`;
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      systemInstruction: CATEGORY_INSTRUCTION,
+      responseMimeType: "application/json",
+      temperature: 0.2,
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          category_id: {
+            type: Type.STRING,
+            description: "ID da categoria do Mercado Livre Brasil (ex.: MLB1648).",
+          },
+        },
+        required: ["category_id"],
+      },
+    },
+  });
+
+  const text = response.text;
+  if (!text) return null;
+
+  try {
+    const result = CategorySchema.parse(JSON.parse(text));
+    const id = result.category_id.trim().toUpperCase();
+    return /^ML[A-Z]\d+$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
 }
