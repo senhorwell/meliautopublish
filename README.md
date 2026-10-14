@@ -62,8 +62,9 @@ src/
    catálogo (`/p/MLB...`) usam `GET /products/{id}`; o próprio anúncio da conta
    usa `GET /items/{id}`; anúncios de terceiros (bloqueados em `/items`) são
    resolvidos pelo produto de catálogo via `GET /products/search` a partir do
-   título no link. O scrap da página HTML fica apenas como último recurso
-   (o Mercado Livre bloqueia acesso automático com verificação anti-bot).
+   título no link. Como último recurso, o scraper lê a página HTML usando o
+   **cookie de sessão logada** ("Sessão ML" na interface) — sem ele o Mercado
+   Livre redireciona para o login/`account-verification`.
 3. **Otimização** — `optimizeListing` envia título/preço/atributos/descrição ao
    Gemini com `responseSchema`, garantindo JSON válido:
    ```json
@@ -108,6 +109,7 @@ Preencha o `.env`:
 | `ML_CLIENT_SECRET` | Secret do app do Mercado Livre                                   |
 | `ML_REDIRECT_URI`  | Deve ser exatamente `{APP_URL}/api/auth/callback`                |
 | `ML_SITE_ID`       | Site do Mercado Livre (padrão `MLB` = Brasil)                    |
+| `ML_SESSION_COOKIE`| (Opcional) Cookie de sessão logada, para ler anúncios de terceiros |
 | `GEMINI_API_KEY`   | Chave gratuita do Google AI Studio                               |
 | `GEMINI_MODEL`     | Modelo Gemini (padrão `gemini-1.5-flash`)                        |
 
@@ -154,6 +156,11 @@ Abra [http://localhost:3000](http://localhost:3000), clique em
 - **Categoria/atributos**: o anúncio é criado reaproveitando a categoria e os
   atributos do original. Se o Mercado Livre rejeitar por causa de atributos, a app
   tenta novamente sem eles (veja `createItem` em `src/lib/ml.ts`).
+- **Anúncios de terceiros**: a API do Mercado Livre só libera `GET /items/{id}`
+  para itens da própria conta (busca de itens de terceiros retorna 403). Para
+  replicar anúncios de outros vendedores, configure o **cookie de sessão** em
+  "Sessão ML" (DevTools → Network → copie o cabeçalho `Cookie` estando logado no
+  mercadolivre.com.br). Ele é usado apenas pelo scraper e pode expirar.
 - **Categorias que exigem atributos obrigatórios** podem retornar erro de validação;
   a mensagem do ML é exibida no card do chat para ajuste manual.
 - Se o modelo `gemini-1.5-flash` não estiver disponível na sua conta, ajuste

@@ -1,6 +1,14 @@
+import { getMlSessionCookie } from "@/lib/session";
 import type { ExtractedItem } from "@/lib/types";
 
 const ITEM_ID_REGEX = /(ML[A-Z])-?(\d{6,})/i;
+
+/**
+ * URLs para onde o Mercado Livre redireciona quando exige login/verificação.
+ * Sem um cookie de sessão válido caímos aqui em vez da página do anúncio.
+ */
+const LOGIN_WALL_REGEX =
+  /account-verification|\/gz\/|\/login|login-portal|signin|challenge|captcha/i;
 
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -188,12 +196,22 @@ function looksLikeChallenge(html: string): boolean {
 }
 
 async function fetchProductHtml(url: string): Promise<string> {
+  const cookie = await getMlSessionCookie();
   const res = await fetch(url, {
-    headers: BROWSER_HEADERS,
+    headers: cookie ? { ...BROWSER_HEADERS, Cookie: cookie } : BROWSER_HEADERS,
     redirect: "follow",
     cache: "no-store",
   });
   const html = await res.text();
+
+  const landedOnLogin = LOGIN_WALL_REGEX.test(res.url);
+  if (landedOnLogin) {
+    throw new Error(
+      cookie
+        ? "A sessão do Mercado Livre expirou ou é inválida. Atualize o cookie em “Sessão ML”."
+        : "O Mercado Livre exige login para acessar este anúncio. Configure o cookie de sessão em “Sessão ML”.",
+    );
+  }
   if (!res.ok) {
     throw new Error(
       `Não foi possível acessar a página do anúncio (HTTP ${res.status}).`,
@@ -201,7 +219,9 @@ async function fetchProductHtml(url: string): Promise<string> {
   }
   if (looksLikeChallenge(html)) {
     throw new Error(
-      "O Mercado Livre bloqueou o acesso automático à página (verificação anti-bot). Tente novamente em instantes.",
+      cookie
+        ? "O Mercado Livre bloqueou o acesso automático à página (verificação anti-bot). Tente novamente em instantes."
+        : "O Mercado Livre bloqueou o acesso automático à página. Configure o cookie de sessão em “Sessão ML” para liberar o acesso.",
     );
   }
   return html;

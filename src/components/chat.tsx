@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Bot,
   CheckCircle2,
+  Cookie,
   ExternalLink,
   Loader2,
   LogOut,
@@ -12,6 +13,9 @@ import {
   Rocket,
   Search,
   Send,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
   User,
   XCircle,
 } from "lucide-react";
@@ -45,6 +49,13 @@ type Connection = {
   error?: string;
 };
 
+type MlSession = {
+  configured: boolean;
+  source?: "db" | "env" | null;
+  updatedAt?: string | null;
+  preview?: string | null;
+};
+
 const uid = () => Math.random().toString(36).slice(2);
 
 const WELCOME =
@@ -69,6 +80,10 @@ export default function Chat() {
   const [markup, setMarkup] = useState(0);
   const [sending, setSending] = useState(false);
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [session, setSession] = useState<MlSession | null>(null);
+  const [showSession, setShowSession] = useState(false);
+  const [sessionInput, setSessionInput] = useState("");
+  const [sessionBusy, setSessionBusy] = useState(false);
   const [notice, setNotice] = useState<{
     tone: "success" | "error";
     text: string;
@@ -81,6 +96,52 @@ export default function Chat() {
       setConnection(await res.json());
     } catch {
       setConnection({ connected: false });
+    }
+  }, []);
+
+  const refreshSession = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ml/session", { cache: "no-store" });
+      setSession((await res.json()) as MlSession);
+    } catch {
+      setSession({ configured: false });
+    }
+  }, []);
+
+  const saveSession = useCallback(async () => {
+    if (!sessionInput.trim() || sessionBusy) return;
+    setSessionBusy(true);
+    try {
+      const res = await fetch("/api/ml/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookie: sessionInput }),
+      });
+      const data = (await res.json()) as MlSession & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Não foi possível salvar.");
+      setSession(data);
+      setSessionInput("");
+      setNotice({ tone: "success", text: "Cookie de sessão salvo." });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Erro ao salvar o cookie.",
+      });
+    } finally {
+      setSessionBusy(false);
+    }
+  }, [sessionInput, sessionBusy]);
+
+  const clearSession = useCallback(async () => {
+    setSessionBusy(true);
+    try {
+      const res = await fetch("/api/ml/session", { method: "DELETE" });
+      setSession((await res.json()) as MlSession);
+      setNotice({ tone: "success", text: "Cookie de sessão removido." });
+    } catch {
+      setNotice({ tone: "error", text: "Erro ao remover o cookie." });
+    } finally {
+      setSessionBusy(false);
     }
   }, []);
 
@@ -120,6 +181,8 @@ export default function Chat() {
       } catch {
         if (active) setConnection({ connected: false });
       }
+
+      if (active) await refreshSession();
     };
 
     void init();
@@ -127,7 +190,7 @@ export default function Chat() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshSession]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -283,6 +346,24 @@ export default function Chat() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSession((value) => !value)}
+            title="Cookie de sessão do Mercado Livre (necessário para anúncios de terceiros)"
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+              session?.configured
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
+            )}
+          >
+            {session?.configured ? (
+              <ShieldCheck className="h-3.5 w-3.5" />
+            ) : (
+              <ShieldAlert className="h-3.5 w-3.5" />
+            )}
+            Sessão ML
+          </button>
           {connection?.connected ? (
             <>
               <span className="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 sm:flex">
@@ -325,6 +406,80 @@ export default function Chat() {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           )}
           <span>{notice.text}</span>
+        </div>
+      )}
+
+      {showSession && (
+        <div className="border-b border-slate-200 bg-amber-50/50 px-4 py-3 text-sm sm:px-6">
+          <div className="flex items-start gap-2.5">
+            <Cookie className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="flex-1 space-y-2">
+              <p className="text-xs leading-relaxed text-slate-600">
+                O Mercado Livre só libera anúncios de terceiros com uma sessão
+                logada. Entre no Mercado Livre, abra o DevTools (F12) → Network,
+                clique em qualquer requisição e copie o valor do cabeçalho{" "}
+                <code className="rounded bg-slate-200 px-1">Cookie</code> — cole
+                abaixo. Vale para esta conta; renove quando expirar.
+              </p>
+
+              {session?.configured ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700">
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                  <span className="break-all">
+                    Ativo
+                    {session.source === "env" ? " (via ML_SESSION_COOKIE)" : ""}:{" "}
+                    {session.preview ?? "•••"}
+                  </span>
+                  {session.source !== "env" && (
+                    <button
+                      type="button"
+                      onClick={() => void clearSession()}
+                      disabled={sessionBusy}
+                      className="ml-auto flex items-center gap-1 rounded-md border border-emerald-200 px-2 py-0.5 font-medium transition hover:bg-emerald-100 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Remover
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  Nenhum cookie configurado — anúncios de terceiros vão falhar.
+                </p>
+              )}
+
+              <textarea
+                value={sessionInput}
+                onChange={(e) => setSessionInput(e.target.value)}
+                rows={3}
+                placeholder="_csrf=...; ssid=...; ..."
+                className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveSession()}
+                  disabled={sessionBusy || !sessionInput.trim()}
+                  className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {sessionBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                  )}
+                  Salvar cookie
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSession(false)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
